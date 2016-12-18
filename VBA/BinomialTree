@@ -1,0 +1,91 @@
+' A function for pricing options using a binomial tree
+' The function can price both American and European call and put options
+' The barrier option allows the function to handle down-and-out type options as well, with a percentage value for the barrier
+' Created by Victor Ode(vicod194)
+' 2016-12-15
+Function BinomialTreePrice(S As Double, K As Double, sigma As Double, r As Double, T As Double, N As Integer, barrierPercentage As Double, barrier As Variant, dividendYield As Double, yearsToDividend As Double, oType As Variant) As Double
+
+    Dim sPriceMatrix() As Double
+    ReDim sPriceMatrix(N, N)
+    Dim oPriceMatrix() As Double
+    ReDim oPriceMatrix(N, N)
+    Dim deltaT As Double
+    Dim u As Double
+    Dim d As Double
+    Dim q As Double
+    Dim earlyExcercise As Double
+    
+    deltaT = T / N
+    u = Exp(sigma * Sqr(deltaT))
+    d = Exp(-sigma * Sqr(deltaT))
+    q = (Exp(r * deltaT) - d) / (u - d)
+    
+    ' Build the stockprice matrix
+    sPriceMatrix(0, 0) = S
+    Dim i As Integer
+    Dim j As Integer
+    For i = 1 To N
+        For j = 0 To i
+            ' If we are behind the dividend date we must subtract the dividend from the stockprice
+            If (i * deltaT >= yearsToDividend) Then
+                sPriceMatrix(i, j) = S * (u ^ (i - j)) * (d ^ j) * (1 - dividendYield)
+            Else
+                sPriceMatrix(i, j) = S * (u ^ (i - j)) * (d ^ j)
+            End If
+        Next
+    Next
+    
+    ' Calculate the value of the option at maturity
+    For i = 0 To N
+        If (oType = "C-EU" Or oType = "C-AM") Then
+            If ((1 - barrierPercentage) * S > sPriceMatrix(N, i) And barrier = "True") Then
+                oPriceMatrix(N, i) = 0
+            Else
+                oPriceMatrix(N, i) = Application.Max(sPriceMatrix(N, i) - K, 0)
+            End If
+        Else
+            If ((1 - barrierPercentage) * S > sPriceMatrix(N, i) And barrier = "True") Then
+                oPriceMatrix(N, i) = 0
+            Else
+                oPriceMatrix(N, i) = Application.Max(K - sPriceMatrix(N, i), 0)
+            End If
+        End If
+    Next
+    
+    ' Iterate backwards over the s price matrix and calculate the dicounted option price value
+    ' In the case of an american option we also have to take into consideration the option of early excersising
+    For i = (N - 1) To 0 Step -1
+        For j = 0 To i
+            If (oType = "P-EU" Or oType = "C-EU") Then
+                If ((1 - barrierPercentage) * S > sPriceMatrix(i, j) And barrier = "True") Then
+                    oPriceMatrix(i, j) = 0
+                Else
+                    oPriceMatrix(i, j) = Exp(-r * deltaT) * (q * oPriceMatrix(i + 1, j) + (1 - q) * oPriceMatrix(i + 1, j + 1))
+                End If
+            Else
+                If (oType = "C-AM") Then
+                    earlyExcercise = (sPriceMatrix(i, j) - K)
+                Else
+                    earlyExcercise = (K - sPriceMatrix(i, j))
+                End If
+                
+                If ((1 - barrierPercentage) * S > sPriceMatrix(i, j) And barrier = "True") Then
+                    oPriceMatrix(i, j) = 0
+                Else
+                    oPriceMatrix(i, j) = Application.Max(Exp(-r * deltaT) * (q * oPriceMatrix(i + 1, j) + (1 - q) * oPriceMatrix(i + 1, j + 1)), earlyExcercise)
+                End If
+            End If
+        Next j
+    Next i
+     
+    BinomialTreePrice = oPriceMatrix(0, 0)
+    
+    
+    
+    
+End Function
+Sub test()
+    Dim price As Double
+    price = BinomialTreePrice(328.6, 320, 0.2, -0.009, 0.5, 10, 0.05, "True", 0.05, 0.3, "P-AM")
+    MsgBox (price)
+End Sub
